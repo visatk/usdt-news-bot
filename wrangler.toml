@@ -1,0 +1,13 @@
+name = "usdt-news-bot"
+main = "src/index.ts"
+compatibility_flags = [ "nodejs_compat" ]
+compatibility_date = "2026-06-12"
+
+
+[triggers]
+crons = ["0 */2 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "usdt_news_db"
+database_id = "YOUR_DATABASE_ID_HERE"
