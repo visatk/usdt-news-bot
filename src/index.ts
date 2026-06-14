@@ -7,7 +7,6 @@ import { fetchCryptoNews } from './services/crawler';
 import { broadcastNews } from './services/telegram';
 
 export default {
-	// 1. Webhook Handler: For handling standard Telegram Bot messages/commands (Future-proofing)
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 		
@@ -17,7 +16,6 @@ export default {
 		return cb(request);
 	},
 
-	// 2. Cron Trigger: For automated scraping and posting
 	async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
 		const db = drizzle(env.DB);
 
@@ -27,13 +25,10 @@ export default {
 			for (const article of articles) {
 				const articleUrl = article.url.startsWith('http') ? article.url : `https://cryptonews.com${article.url}`;
 				
-				// Duplicate Check via Drizzle
 				const existing = await db.select().from(postedLeads).where(eq(postedLeads.url, articleUrl)).get();
 
 				if (!existing) {
-					// Post via Grammy Service
 					await broadcastNews(env, { ...article, url: articleUrl });
-					// Save to D1
 					await db.insert(postedLeads).values({ url: articleUrl, title: article.title }).run();
 				}
 			}
