@@ -39,3 +39,16 @@ If the application uses Durable Objects or Workflows, refer to the relevant best
 
 - Durable Objects: https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/
 - Workflows: https://developers.cloudflare.com/workflows/build/rules-of-workflows/
+
+  # Agent Directives for usdt-news-bot
+
+## Core Architecture
+- **Environment:** Cloudflare Workers (Serverless/Edge).
+- **Database:** Cloudflare D1 with Drizzle ORM.
+- **Goal:** Run scheduled tasks (crons) to fetch, process, and post Web3/USDT news to Telegram.
+
+## Rules for AI Agents
+1. **No DevOps:** Do not suggest Docker, VPS, or traditional servers. Stick to Cloudflare ecosystem.
+2. **Minimalism:** Follow the 80/20 rule. Write functional, boilerplate-ready code. Prevent feature creep.
+3. **Database Changes:** Always use Drizzle ORM for any modifications to the SQLite schema. Do not write raw SQL queries for standard CRUD operations.
+4. **Error Handling:** Fail silently where necessary during chron jobs to prevent crashing the entire execution pipeline, but log critical errors.
