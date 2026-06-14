@@ -34,42 +34,49 @@ export const fetchCryptoNews = async (env: Env) => {
 		},
 	};
 
-	// 1. Initiate Crawl
-	const initRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl`, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${env.CF_API_TOKEN}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify(crawlPayload),
-	});
-
-	const initData = (await initRes.json()) as any;
-	const jobId = initData.result;
-	if (!jobId) throw new Error('Crawl initiation failed');
-
-	// 2. Poll for Completion (Max 15 attempts)
-	let crawlData: any = null;
-	for (let i = 0; i < 15; i++) {
-		const statusRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl/${jobId}?limit=1`, {
-			headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+	try {
+		const initRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${env.CF_API_TOKEN}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(crawlPayload),
 		});
-		crawlData = await statusRes.json();
 
-		if (crawlData.result?.status === 'completed') break;
-		if (['errored', 'cancelled_due_to_limits', 'cancelled_due_to_timeout'].includes(crawlData.result?.status)) {
-			throw new Error(`Crawl failed with status: ${crawlData.result?.status}`);
+		const initData = (await initRes.json()) as any;
+		const jobId = initData?.result;
+		
+		if (!jobId) {
+			console.error('Crawl initiation failed:', initData);
+			return [];
 		}
-		await new Promise((res) => setTimeout(res, 5000));
-	}
 
-	// 3. Extract and Return Data
-	if (crawlData?.result?.records && crawlData.result.records.length > 0) {
-		const record = crawlData.result.records[0];
-		if (record.json) {
-			const parsedData = JSON.parse(record.json);
-			return parsedData.articles || [];
+		let crawlData: any = null;
+		for (let i = 0; i < 15; i++) {
+			const statusRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl/${jobId}?limit=1`, {
+				headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+			});
+			crawlData = await statusRes.json();
+
+			if (crawlData.result?.status === 'completed') break;
+			if (['errored', 'cancelled_due_to_limits', 'cancelled_due_to_timeout'].includes(crawlData.result?.status)) {
+				console.error(`Crawl failed with status: ${crawlData.result?.status}`);
+				return [];
+			}
+			await new Promise((res) => setTimeout(res, 5000));
 		}
+
+		if (crawlData?.result?.records && crawlData.result.records.length > 0) {
+			const record = crawlData.result.records[0];
+			if (record.json) {
+				const parsedData = JSON.parse(record.json);
+				return parsedData.articles || [];
+			}
+		}
+	} catch (error) {
+		console.error('Crawler API error:', error);
 	}
+	
 	return [];
 };
