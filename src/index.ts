@@ -8,12 +8,17 @@ import { broadcastNews } from './services/telegram';
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+		// AppSec: Prevent unauthorized executions by verifying the secret token
+		const secretToken = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+		if (secretToken !== env.TELEGRAM_WEBHOOK_SECRET) {
+			return new Response("Unauthorized Webhook Request", { status: 401 });
+		}
+
 		try {
 			const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 			
-			bot.command("start", (ctx) => ctx.reply("🚀 USDT News Bot is active! Real-time Web3 updates will be posted to the channel automatically."));
+			bot.command("start", (ctx) => ctx.reply("🚀 USDT News Bot is securely active! Real-time Web3 updates will be posted."));
 			
-			// Using 'cloudflare-mod' for module-based workers
 			const cb = webhookCallback(bot, 'cloudflare-mod');
 			return await cb(request);
 		} catch (error) {
@@ -29,6 +34,9 @@ export default {
 			const articles = await fetchCryptoNews(env);
 
 			for (const article of articles) {
+				// Validate schema structure to prevent DB crashes
+				if (!article.url || !article.title) continue;
+
 				const existing = await db.select().from(postedLeads).where(eq(postedLeads.url, article.url)).get();
 
 				if (!existing) {
@@ -36,6 +44,7 @@ export default {
 						await broadcastNews(env, article);
 						await db.insert(postedLeads).values({ url: article.url, title: article.title }).run();
 					} catch (broadcastErr) {
+						// Fail silently for individual nodes to prevent halting the entire cron sequence
 						console.error(`Failed to broadcast article ${article.url}:`, broadcastErr);
 					}
 				}
