@@ -10,4 +10,4 @@ crons = ["0 */2 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "usdt_news_db"
-database_id = "YOUR_DATABASE_ID_HERE"
+database_id = "6b845496-4b40-464c-b570-3c9a541562ab"
