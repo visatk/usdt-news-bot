@@ -1,8 +1,5 @@
 import { Env } from '../types';
 
-// Cloudflare Workers এর গ্লোবাল scheduler টাইপ ডিক্লেয়ারেশন
-declare const scheduler: { wait: (ms: number, options?: { signal?: AbortSignal }) => Promise<void> };
-
 export const fetchCryptoNews = async (env: Env) => {
 	const targetUrls = [
 		'https://cryptonews.com/news/tether-news/',
@@ -15,9 +12,9 @@ export const fetchCryptoNews = async (env: Env) => {
 	for (const targetUrl of targetUrls) {
 		const crawlPayload = {
 			url: targetUrl,
-			limit: 1, // শুধু ইনডেক্স পেজ ক্রল করব
+			limit: 1, 
 			formats: ['json'],
-			render: false, // স্ট্যাটিক HTML ফেচ করে পারফরম্যান্স বাড়াবে
+			render: false, 
 			jsonOptions: {
 				prompt: 'Extract the top 3 latest news articles related to USDT, Tether, or Web3 from this page. Provide the title, full absolute URL, and a very short 1-sentence summary.',
 				response_format: {
@@ -45,7 +42,6 @@ export const fetchCryptoNews = async (env: Env) => {
 		};
 
 		try {
-			// 1. Initiate the crawl job
 			const initRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl`, {
 				method: 'POST',
 				headers: {
@@ -55,20 +51,21 @@ export const fetchCryptoNews = async (env: Env) => {
 				body: JSON.stringify(crawlPayload),
 			});
 
+			if (!initRes.ok) continue;
+
 			const initData = (await initRes.json()) as any;
 			const jobId = initData?.result;
 			
-			if (!jobId) {
-				console.error(`Crawl initiation failed for ${targetUrl}:`, initData);
-				continue;
-			}
+			if (!jobId) continue;
 
-			// 2. Poll for Completion with limit=1 to keep response lightweight
 			let isCompleted = false;
 			for (let i = 0; i < 15; i++) {
 				const statusRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl/${jobId}?limit=1`, {
 					headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
 				});
+				
+				if (!statusRes.ok) continue;
+
 				const statusData = (await statusRes.json()) as any;
 				const status = statusData.result?.status;
 
@@ -81,36 +78,39 @@ export const fetchCryptoNews = async (env: Env) => {
 					break;
 				}
 				
-				// Using scheduler.wait instead of setTimeout (Cloudflare Best Practice)
-				await scheduler.wait(5000); 
+				// Standard, platform-compliant blocking approach for Cloudflare Workers
+				await new Promise((resolve) => setTimeout(resolve, 5000));
 			}
 
-			// 3. Fetch the full results WITHOUT the limit parameter after completion
 			if (isCompleted) {
 				const fullRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl/${jobId}`, {
 					headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
 				});
+				
+				if (!fullRes.ok) continue;
+
 				const crawlData = (await fullRes.json()) as any;
 
-				if (crawlData?.result?.records && crawlData.result.records.length > 0) {
-					// since limit was 1 in payload, records[0] contains the data
-					const record = crawlData.result.records[0];
-					if (record.json) {
-						const parsedData = JSON.parse(record.json);
+				// Safe extraction handling dynamically generated API responses
+				if (crawlData?.result?.records?.[0]?.json) {
+					try {
+						const parsedData = JSON.parse(crawlData.result.records[0].json);
 						const articles = parsedData.articles || [];
 						
 						const baseUrl = new URL(targetUrl).origin;
 						const formattedArticles = articles.map((a: any) => ({
 							...a,
-							url: a.url.startsWith('http') ? a.url : `${baseUrl}${a.url}`
-						}));
+							url: a.url?.startsWith('http') ? a.url : `${baseUrl}${a.url || ''}`
+						})).filter((a: any) => a.title && a.url); // Drop malformed extractions
 
 						allArticles.push(...formattedArticles);
+					} catch (parseErr) {
+						console.error(`JSON processing crashed for ${targetUrl}:`, parseErr);
 					}
 				}
 			}
 		} catch (error) {
-			console.error(`Crawler API error for ${targetUrl}:`, error);
+			console.error(`Crawler network failure for ${targetUrl}:`, error);
 		}
 	}
 	
