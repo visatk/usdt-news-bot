@@ -4,4 +4,5 @@ export interface Env {
 	CF_API_TOKEN: string;
 	TELEGRAM_BOT_TOKEN: string;
 	TELEGRAM_CHANNEL_ID: string;
+	TELEGRAM_WEBHOOK_SECRET: string; // Added for Webhook Security
 }
