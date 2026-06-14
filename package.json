@@ -7,7 +7,9 @@
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "test": "vitest",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "npx wrangler d1 migrations apply usdt-news-bot --remote"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
