@@ -7,9 +7,8 @@ export const fetchCryptoNews = async (env: Env) => {
 		'https://www.coindesk.com/tag/tether/'
 	];
 
-	const allArticles: { title: string; url: string; summary: string }[] = [];
-
-	for (const targetUrl of targetUrls) {
+	// Run crawl jobs in parallel to avoid Cloudflare Worker cron timeout limits
+	const crawlPromises = targetUrls.map(async (targetUrl) => {
 		const crawlPayload = {
 			url: targetUrl,
 			limit: 1, 
@@ -51,15 +50,17 @@ export const fetchCryptoNews = async (env: Env) => {
 				body: JSON.stringify(crawlPayload),
 			});
 
-			if (!initRes.ok) continue;
+			if (!initRes.ok) return [];
 
 			const initData = (await initRes.json()) as any;
-			const jobId = initData?.result;
+			// FIX: Extract the actual job ID string from the Cloudflare API response object
+			const jobId = initData?.result?.id; 
 			
-			if (!jobId) continue;
+			if (!jobId) return [];
 
 			let isCompleted = false;
-			for (let i = 0; i < 15; i++) {
+			// Polling limit adjusted to balance between completion safety and edge timeouts
+			for (let i = 0; i < 10; i++) {
 				const statusRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/crawl/${jobId}?limit=1`, {
 					headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
 				});
@@ -78,7 +79,6 @@ export const fetchCryptoNews = async (env: Env) => {
 					break;
 				}
 				
-				// Standard, platform-compliant blocking approach for Cloudflare Workers
 				await new Promise((resolve) => setTimeout(resolve, 5000));
 			}
 
@@ -87,23 +87,23 @@ export const fetchCryptoNews = async (env: Env) => {
 					headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
 				});
 				
-				if (!fullRes.ok) continue;
+				if (!fullRes.ok) return [];
 
 				const crawlData = (await fullRes.json()) as any;
+				
+				// Safely resolve the deeply nested JSON output based on Cloudflare's dynamic structure
+				const jsonContent = crawlData?.result?.records?.[0]?.json || crawlData?.result?.json;
 
-				// Safe extraction handling dynamically generated API responses
-				if (crawlData?.result?.records?.[0]?.json) {
+				if (jsonContent) {
 					try {
-						const parsedData = JSON.parse(crawlData.result.records[0].json);
+						const parsedData = JSON.parse(jsonContent);
 						const articles = parsedData.articles || [];
 						
 						const baseUrl = new URL(targetUrl).origin;
-						const formattedArticles = articles.map((a: any) => ({
+						return articles.map((a: any) => ({
 							...a,
 							url: a.url?.startsWith('http') ? a.url : `${baseUrl}${a.url || ''}`
-						})).filter((a: any) => a.title && a.url); // Drop malformed extractions
-
-						allArticles.push(...formattedArticles);
+						})).filter((a: any) => a.title && a.url); 
 					} catch (parseErr) {
 						console.error(`JSON processing crashed for ${targetUrl}:`, parseErr);
 					}
@@ -112,7 +112,10 @@ export const fetchCryptoNews = async (env: Env) => {
 		} catch (error) {
 			console.error(`Crawler network failure for ${targetUrl}:`, error);
 		}
-	}
-	
-	return allArticles;
+		
+		return [];
+	});
+
+	const results = await Promise.all(crawlPromises);
+	return results.flat();
 };
